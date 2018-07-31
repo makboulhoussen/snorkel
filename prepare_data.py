@@ -76,8 +76,7 @@ def get_new_companies_element(text, relation, company1, company2) :
 	company_info = {}
 	company_info['doc_id'] = unique_id
 	company_info['text'] = text
-	company_info['relation'] = relation
-	company_info['companies'] = get_companies_relation_pos(company1, company2, text)
+	company_info['companies_relation'] = get_companies_relation_pos(company1, company2, relation, text)
 	return company_info
 	
 
@@ -96,9 +95,9 @@ def get_company_positions(company_name, text) :
 		for s in similar_names :
 			p = re.compile(r'\b({0})\b'.format(s), re.IGNORECASE)
 			for m in p.finditer(text):
-				if (m.start() in inital_pos) :
-					pos = m.start()
-					final_pos.append([pos, pos + len(s) -1])
+				pos = m.start()
+				final_pos.append([pos, pos + len(s) -1])
+				if (pos in inital_pos) :
 					inital_pos.remove(pos)
 	for pos in inital_pos :
 		final_pos.append([pos, pos + len(company_name) -1])
@@ -108,16 +107,30 @@ def get_company_positions(company_name, text) :
 '''
 	Retourne les positions des entreprises en relation
 '''
-def get_companies_relation_pos(company1, company2, text) :
+def get_companies_relation_pos(company1, company2, relation_type, text) :
 	relations = []
 	pos1_l = get_company_positions(company1, text)
 	pos2_l = get_company_positions(company2, text)
+
 	for p1 in pos1_l :
 		for p2 in pos2_l :
 			relation = {}
+			relation['relation_type'] = relation_type
 			relation['pos_company_1'] = str(p1[0]) + ':'+ str(p1[1]) 
 			relation['pos_company_2'] = str(p2[0]) + ':'+ str(p2[1])
 			relations.append(relation)
+	for a, b in itertools.combinations(pos1_l, 2):
+		relation = {}
+		relation['relation_type'] = 'SAME'
+		relation['pos_company_1'] = str(a[0]) + ':'+ str(a[1]) 
+		relation['pos_company_2'] = str(b[0]) + ':'+ str(b[1])
+		relations.append(relation)
+	for a, b in itertools.combinations(pos2_l, 2):
+		relation = {}
+		relation['relation_type'] = 'SAME'
+		relation['pos_company_1'] = str(a[0]) + ':'+ str(a[1]) 
+		relation['pos_company_2'] = str(b[0]) + ':'+ str(b[1])
+		relations.append(relation)
 	return relations
 
 
@@ -140,29 +153,29 @@ def generate_gold_labels_file(g_labels_file_name) :
 	gold_labels_file = open(g_labels_file_name, "w")
 	gold_labels_file.write("company1	company2	label\n")
 	for c in companies_data :
-		if (c['relation'].upper() == 'PARTNER') :
-			value = '1'
-		else :
-			value = '-1'
-		# elif (c['relation'].upper() != 'UNCLEAR') :
-		# 	value = '-1'
-		# else :
-		# 	value = '-1'
-		# 	#continue
-		for r in c['companies'] :
+		for r in c['companies_relation'] :
+			if (r['relation_type'].upper() == 'PARTNER') :
+				value = '1'
+			elif (r['relation_type'].upper() != 'UNCLEAR'):
+				value = '-1'
+			else :
+				continue
 			gold_labels_file.write(c['doc_id'] + '::span:' + str(r['pos_company_1']) + '\t' \
 					+ c['doc_id'] + '::span:' + str(r["pos_company_2"])+ '\t' + value + '\n')
 	gold_labels_file.close()
 	print("gold_labels.tsv file generated")
 
 
-def check_NonExist(new_company_relation, company_info) :
-	for d in company_info['companies'] :
-		if d['pos_company_1'] == new_company_relation['pos_company_2'] and d['pos_company_2'] == new_company_relation['pos_company_1'] :
-			return False
-		elif d['pos_company_1'] == new_company_relation['pos_company_1'] and d['pos_company_2'] == new_company_relation['pos_company_2'] :
-			return False
-	return True
+
+def update_relations(company_info, new_relations, text) :
+	for nr in new_relations :
+		for item in company_info['companies_relation'] :
+			if item['pos_company_1'] == nr['pos_company_2'] and  item['pos_company_2'] == nr['pos_company_1'] and item['relation_type'] == nr['relation_type'] :
+				return None
+			elif item['pos_company_1'] == nr['pos_company_1'] and  item['pos_company_2'] == nr['pos_company_2'] and item['relation_type'] == nr['relation_type'] :
+				return None
+	company_info['companies_relation'] = company_info['companies_relation'] + new_relations
+	return company_info
 
 
 
@@ -181,23 +194,13 @@ for line in file:
 	company1 = data[0].lower()
 	company2 = data[1].lower()
 	relation = data[2]
-
 	if not any(d['text'] == text for d in companies_data) :
 		company_info = get_new_companies_element(text, relation, company1, company2)
 		companies_data.append(company_info)
 	else :
-		company_info = next((item for item in companies_data if item['text'] == text and item['relation'] == relation), None)
-		if (company_info is None) :
-			company_info = get_new_companies_element(text, relation, company1, company2)
-			companies_data.append(company_info)
-		else :
-			new_relations = get_companies_relation_pos(company1, company2, text)
-			for nr in new_relations :
-				if (check_NonExist(nr, company_info)) :
-					company_info['companies'].append(nr)
-
-
-print(companies_data[27:32])
+		company_info = next((item for item in companies_data if item['text'] == text), None)
+		new_relations = get_companies_relation_pos(company1, company2, relation, text)
+		update_relations(company_info, new_relations, text)
 
 
 generate_articles_file("./data/articles.tsv")
