@@ -5,12 +5,13 @@ import itertools
 
 # Prepare the data from the file sentences.gold.en
 # Create an articles file and a gold label file
+# Split document in train, dev and test sets.
 
 
 #### TRAITEMENT DES NOMS D'ENTREPRISES
 
 '''
-Charge le noms des enteprises dans une liste
+Charge le noms des enteprises dans une liste. Sera utile pour l'étape parsing Snorkel.
 '''
 def load_company_names(data_path) :
 	companies_names = []
@@ -32,7 +33,7 @@ def load_company_names(data_path) :
 
 
 '''
-On construit un dictionnaire de noms d'entreprises similaire
+On construit un dictionnaire de noms d'entreprises similaire. Ex : Oracle, Oracle Group, Oracle Corp.
 '''
 def load_similar_company_names(companies_names) :
 	similars = {}
@@ -52,6 +53,11 @@ def load_similar_company_names(companies_names) :
 
 ### TRAITEMENT DES DONNEES
 
+positive_relations = []
+negative_relations = []
+abstain_relations = []
+
+ 
 '''
 Retourne le contenu de l'article
 '''
@@ -60,7 +66,7 @@ def get_text(data) :
 	if(len(data) > 4) :
 		combined_text=""
 		for t in data[3:] :
-			combined_text += t
+			combined_text += t.rstrip()
 		data[3] = combined_text
 		data = data[:4]
 	text = data[3]
@@ -119,6 +125,7 @@ def get_companies_relation_pos(company1, company2, relation_type, text) :
 			relation['pos_company_1'] = str(p1[0]) + ':'+ str(p1[1]) 
 			relation['pos_company_2'] = str(p2[0]) + ':'+ str(p2[1])
 			relations.append(relation)
+	# On rajoute la relation c1 = c1
 	for a, b in itertools.combinations(pos1_l, 2):
 		relation = {}
 		relation['relation_type'] = 'SAME'
@@ -134,6 +141,26 @@ def get_companies_relation_pos(company1, company2, relation_type, text) :
 	return relations
 
 
+
+def store_doc_main_relation(company_info) :
+	negative, abstain, positive = 0,0,0
+	for r in company_info['companies_relation'] :
+		if r['relation_type'].upper() == 'PARTNER' :
+			positive += 1
+		#elif r['relation_type'].upper() == 'UNCLEAR' :
+		#	abstain += 1
+		else :
+			negative += 1
+	l = [negative, abstain, positive]
+	majority = l.index(max(l))
+	if majority == 0 :
+		negative_relations.append(company_info['doc_id'])
+	elif majority == 1 :
+		abstain_relations.append(company_info['doc_id'])
+	else :
+		positive_relations.append(company_info['doc_id'])
+
+
 '''
 Genere le fichier contenant l'ensemble des articles avec allocation d'un identifiant unique
 '''
@@ -141,6 +168,7 @@ def generate_articles_file(articles_file_name) :
 	# Write article.tsv and gold labels files
 	articles_file = open(articles_file_name, 'w')
 	for c in companies_data :
+		store_doc_main_relation(c)
 		articles_file.write( c['doc_id'] + '\t' + c['text'] + '\n')
 	articles_file.close()
 	print("articles.tsv file generated")
@@ -156,10 +184,11 @@ def generate_gold_labels_file(g_labels_file_name) :
 		for r in c['companies_relation'] :
 			if (r['relation_type'].upper() == 'PARTNER') :
 				value = '1'
-			elif (r['relation_type'].upper() != 'UNCLEAR'):
-				value = '-1'
+			#elif (r['relation_type'].upper() != 'UNCLEAR'):
+			#	value = '-1'
 			else :
-				continue
+				#value = '0'
+				value = '-1' # On considère unclear comme négatif auss
 			gold_labels_file.write(c['doc_id'] + '::span:' + str(r['pos_company_1']) + '\t' \
 					+ c['doc_id'] + '::span:' + str(r["pos_company_2"])+ '\t' + value + '\n')
 	gold_labels_file.close()
@@ -176,6 +205,30 @@ def update_relations(company_info, new_relations, text) :
 				return None
 	company_info['companies_relation'] = company_info['companies_relation'] + new_relations
 	return company_info
+
+
+def spread_data_in_dataset(full_data, train_dataset, dev_dataset, test_dataset) :
+	for i,doc_id in enumerate(full_data) :
+		if i % 10 == 8:
+			dev_dataset.append(doc_id)
+		elif i % 10 == 9:
+			test_dataset.append(doc_id)
+		else : 
+			train_dataset.append(doc_id)
+
+
+def store_dataset_repartition() :
+	train_dataset, dev_dataset, test_dataset = [], [], []
+	spread_data_in_dataset(negative_relations,train_dataset, dev_dataset, test_dataset)
+	#spread_data_in_dataset(abstain_relations,train_dataset, dev_dataset, test_dataset)
+	spread_data_in_dataset(positive_relations,train_dataset, dev_dataset, test_dataset)
+	with open('./data/train_set.pkl', 'wb') as f:
+		pickle.dump(train_dataset, f)
+	with open('./data/dev_set.pkl', 'wb') as f:
+		pickle.dump(dev_dataset, f)
+	with open('./data/test_set.pkl', 'wb') as f:
+		pickle.dump(test_dataset, f)
+	print("dataset pickle files generated")
 
 
 
@@ -205,5 +258,9 @@ for line in file:
 
 generate_articles_file("./data/articles.tsv")
 generate_gold_labels_file("./data/gold_labels.tsv")
+store_dataset_repartition()
+
+
+
 	
 
