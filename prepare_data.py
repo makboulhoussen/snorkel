@@ -38,12 +38,12 @@ On construit un dictionnaire de noms d'entreprises similaire. Ex : Oracle, Oracl
 def load_similar_company_names(companies_names) :
 	similars = {}
 	for a, b in itertools.combinations(companies_names, 2):
-		if (a in b) :
+		if (a+'s' == b) : # a in b
 			if a not in similars :
 				similars[a] = [b]
 			else :
 				similars[a].append(b)	
-		if (b in a) :
+		if (b+'s' in a) :
 			if b not in similars :
 				similars[b] = [a]
 			else :
@@ -117,7 +117,6 @@ def get_companies_relation_pos(company1, company2, relation_type, text) :
 	relations = []
 	pos1_l = get_company_positions(company1, text)
 	pos2_l = get_company_positions(company2, text)
-
 	for p1 in pos1_l :
 		for p2 in pos2_l :
 			relation = {}
@@ -247,6 +246,8 @@ for line in file:
 	company1 = data[0].lower()
 	company2 = data[1].lower()
 	relation = data[2]
+	if (relation.upper() == 'UNCLEAR') :
+		continue
 	if not any(d['text'] == text for d in companies_data) :
 		company_info = get_new_companies_element(text, relation, company1, company2)
 		companies_data.append(company_info)
