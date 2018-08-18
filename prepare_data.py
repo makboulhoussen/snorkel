@@ -43,7 +43,7 @@ def load_similar_company_names(companies_names) :
 				similars[a] = [b]
 			else :
 				similars[a].append(b)	
-		if (b+'s' in a) :
+		if (b+'s' == a) :
 			if b not in similars :
 				similars[b] = [a]
 			else :
